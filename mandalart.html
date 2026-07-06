@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>MANDALART DRAFT — マンダラチャート設計ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root{
+    --paper:#EDF1F3;
+    --paper-2:#E3E9EC;
+    --ink:#16232E;
+    --ink-soft:#4A5A66;
+    --line-thin:#B9C6CC;
+    --blue:#2F6FA3;
+    --blue-soft:#DCE9F1;
+    --red:#B23A2E;
+    --white:#FAFBFB;
+    --mono: 'JetBrains Mono','SFMono-Regular',Consolas,'Courier New',monospace;
+    --sans: 'Noto Sans JP','Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    background-image:
+      linear-gradient(var(--paper-2) 1px, transparent 1px),
+      linear-gradient(90deg, var(--paper-2) 1px, transparent 1px);
+    background-size:24px 24px;
+    color:var(--ink);
+    font-family:var(--sans);
+    padding:28px 16px 60px;
+  }
+  .sheet{max-width:900px;margin:0 auto;}
+  .head{
+    display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;
+    border-bottom:3px solid var(--ink);padding-bottom:10px;margin-bottom:18px;
+  }
+  .head h1{
+    font-family:var(--mono);font-size:20px;letter-spacing:1px;margin:0;
+    text-transform:uppercase;
+  }
+  .head .sub{font-size:12px;color:var(--ink-soft);font-family:var(--mono);margin-top:4px;}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;}
+  button{
+    font-family:var(--mono);font-size:12px;letter-spacing:.5px;
+    background:var(--white);border:1.5px solid var(--ink);color:var(--ink);
+    padding:8px 12px;cursor:pointer;text-transform:uppercase;
+    transition:background .15s,color .15s;
+  }
+  button:hover{background:var(--ink);color:var(--white);}
+  button.accent{border-color:var(--blue);color:var(--blue);}
+  button.accent:hover{background:var(--blue);color:var(--white);}
+  button.warn{border-color:var(--red);color:var(--red);}
+  button.warn:hover{background:var(--red);color:var(--white);}
+  button.btn-mini{padding:4px 8px;font-size:10px;}
+
+  #capture{background:var(--paper);padding:4px;}
+
+  .mandala-grid{
+    display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+    gap:7px;background:var(--ink);padding:7px;border:3px solid var(--ink);
+    margin-top:18px;
+  }
+  .block{
+    display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+    gap:1px;background:var(--line-thin);
+  }
+  .block.center{outline:2px solid var(--red);outline-offset:-2px;}
+
+  .cell{
+    background:var(--white);
+    min-height:74px;
+    position:relative;
+    overflow:hidden;
+  }
+  .cell.marked{background:#FDF3D8;}
+  .cell.main{
+    display:flex;align-items:center;justify-content:center;text-align:center;
+  }
+  .cell.main .stamp{
+    border:2px dashed var(--red);border-radius:50%;
+    color:var(--red);
+    width:88%;height:88%;
+    display:flex;align-items:center;justify-content:center;
+    text-align:center;padding:6px;
+    transform:rotate(-6deg);
+    font-size:12px;font-family:var(--mono);font-weight:700;
+    outline:none;
+  }
+  .cell.main .stamp:empty:before{content:attr(data-placeholder);color:#E3A29B;}
+  .cell.sub{background:var(--blue-soft);}
+  .cell.subcenter{background:var(--blue-soft);}
+  .cell .celltext{
+    outline:none;height:100%;min-height:74px;
+    padding:16px 20px 5px 7px;
+    font-size:12.5px;line-height:1.35;
+    word-break:break-word;color:var(--ink);
+  }
+  .cell.subcenter .celltext{font-weight:700;}
+  .cell .celltext:empty:before{
+    content:attr(data-placeholder);color:#A7B2B9;font-size:11.5px;
+  }
+  .cell .badge{
+    position:absolute;top:2px;left:3px;
+    font-family:var(--mono);font-size:9px;color:var(--blue);
+    border:1px solid var(--blue);border-radius:50%;
+    width:14px;height:14px;display:flex;align-items:center;justify-content:center;
+    background:var(--white);pointer-events:none;
+  }
+  .cell .markbtn{
+    position:absolute;top:1px;right:3px;
+    font-size:13px;cursor:pointer;color:#B9B18A;user-select:none;
+  }
+  .cell.marked .markbtn{color:#C98A00;}
+
+  .titleblock{
+    margin-top:10px;border:2px solid var(--ink);
+    display:grid;grid-template-columns:2fr 1fr 1fr 1fr;
+    font-family:var(--mono);font-size:10.5px;background:var(--white);
+  }
+  .titleblock div{border-left:1px solid var(--ink);padding:6px 8px;}
+  .titleblock div:first-child{border-left:none;}
+  .titleblock .label{display:block;color:var(--ink-soft);font-size:9px;margin-bottom:2px;}
+  .titleblock .val{font-weight:700;}
+
+  .note{font-size:11px;color:var(--ink-soft);margin-top:10px;font-family:var(--mono);}
+
+  .panel{margin-top:22px;border:2px solid var(--ink);background:var(--white);padding:14px;}
+  .panel h2{
+    font-family:var(--mono);font-size:12.5px;margin:0 0 12px;text-transform:uppercase;
+    letter-spacing:.5px;border-bottom:1px solid var(--line-thin);padding-bottom:6px;
+  }
+
+  .slots{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .slot{border:1.5px solid var(--blue);background:var(--blue-soft);padding:8px;}
+  .slot-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .slot-head span{font-family:var(--mono);font-size:10px;color:var(--blue);}
+  .combo{font-size:12.5px;font-weight:700;min-height:34px;margin-bottom:6px;color:var(--ink);}
+  .combo:empty:before{content:'ここに組み合わせが表示されます';color:#8FA9BC;font-weight:400;font-size:11px;}
+  .idea{
+    background:var(--white);border:1px dashed var(--blue);min-height:54px;
+    padding:6px;font-size:12px;outline:none;
+  }
+  .idea:empty:before{content:attr(data-placeholder);color:#A7B2B9;}
+
+  .todo-controls{margin-bottom:12px;}
+  .todo-group{border:1.5px solid var(--ink);margin-bottom:10px;}
+  .todo-group-head{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    background:var(--paper-2);padding:6px 8px;flex-wrap:wrap;
+  }
+  .theme{
+    flex:1;min-width:120px;font-weight:700;font-size:13px;outline:none;
+    border-bottom:1px dashed var(--line-thin);padding:2px 0;
+  }
+  .theme:empty:before{content:attr(data-placeholder);color:#A7B2B9;font-weight:400;}
+  .todo-actions{display:flex;gap:6px;flex-wrap:wrap;}
+  .todo-items{list-style:none;margin:0;padding:8px;}
+  .todo-items li{
+    display:flex;align-items:flex-start;gap:8px;padding:4px 0;
+    border-bottom:1px solid var(--paper-2);font-size:12.5px;
+  }
+  .todo-items li.done .itext{text-decoration:line-through;color:var(--ink-soft);}
+  .todo-items .itext{flex:1;outline:none;}
+  .todo-items .itext:empty:before{content:'タスク内容';color:#A7B2B9;}
+  .todo-items .idel{cursor:pointer;color:var(--red);font-family:var(--mono);font-size:12px;padding:0 4px;}
+  .todo-items input[type="checkbox"]{margin-top:3px;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="head">
+    <div>
+      <h1>Mandalart Draft</h1>
+      <div class="sub">9×9 GOAL DECOMPOSITION GRID — REV.02</div>
+    </div>
+    <div class="toolbar">
+      <button id="btnSample" class="accent">サンプル読込</button>
+      <button id="btnClear" class="warn">グリッドをクリア</button>
+      <button id="btnPng">PNG出力</button>
+      <button id="btnTxt">テキスト出力</button>
+    </div>
+  </div>
+
+  <div id="capture">
+    <div class="mandala-grid" id="grid"></div>
+    <div class="titleblock">
+      <div><span class="label">TITLE / メインテーマ</span><span class="val" id="tbTitle">—</span></div>
+      <div><span class="label">DWG NO.</span><span class="val">MANDALA-01</span></div>
+      <div><span class="label">DATE</span><span class="val" id="tbDate"></span></div>
+      <div><span class="label">SCALE</span><span class="val">9×9</span></div>
+    </div>
+  </div>
+
+  <div class="note">
+    中央ブロック中心＝最終目標／中央ブロック周囲8マス＝サブテーマ／各サブテーマは対応するブロックの中心セルに複製表示（連動編集）／その周囲8マスに具体的アクションを記入。マス右上の☆をクリックするとアイディアとしてマークでき、Todoコンバーターで一括変換できます。データはブラウザメモリ上のみで保持（リロードで消去）。
+  </div>
+
+  <div class="panel">
+    <h2>アイディア・スロット（強制結合）</h2>
+    <div class="slots" id="slots">
+      <div class="slot" data-slot="1">
+        <div class="slot-head"><span>SLOT 01</span><button type="button" class="btn-mini accent shuffle-btn">🎲 シャッフル</button></div>
+        <div class="combo"></div>
+        <div class="idea" contenteditable="true" data-placeholder="ここに浮かんだアイディアを記入"></div>
+      </div>
+      <div class="slot" data-slot="2">
+        <div class="slot-head"><span>SLOT 02</span><button type="button" class="btn-mini accent shuffle-btn">🎲 シャッフル</button></div>
+        <div class="combo"></div>
+        <div class="idea" contenteditable="true" data-placeholder="ここに浮かんだアイディアを記入"></div>
+      </div>
+      <div class="slot" data-slot="3">
+        <div class="slot-head"><span>SLOT 03</span><button type="button" class="btn-mini accent shuffle-btn">🎲 シャッフル</button></div>
+        <div class="combo"></div>
+        <div class="idea" contenteditable="true" data-placeholder="ここに浮かんだアイディアを記入"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>アクション・コンバーター（Todo変換）</h2>
+    <div class="todo-controls">
+      <button type="button" id="btnAddTheme" class="accent btn-mini">＋ テーマ追加</button>
+    </div>
+    <div id="todoGroups"></div>
+  </div>
+</div>
+
+<script>
+const posOrder = [0,1,2,3,5,6,7,8]; // 3x3ブロック内、中心(4)を除く8マスの並び
+const gridEl = document.getElementById('grid');
+
+function makeCell(block, cell){
+  const wrap = document.createElement('div');
+  wrap.className = 'cell';
+  wrap.dataset.block = block;
+  wrap.dataset.cell = cell;
+
+  if(block === 4 && cell === 4){
+    wrap.classList.add('main');
+    const stamp = document.createElement('div');
+    stamp.className = 'stamp';
+    stamp.contentEditable = 'true';
+    stamp.dataset.role = 'main';
+    stamp.dataset.placeholder = '最終目標';
+    wrap.appendChild(stamp);
+    return wrap;
+  }
+
+  let role, subIndex = null, actionIndex = null, placeholder;
+  if(block === 4 && posOrder.includes(cell)){
+    role = 'sub'; subIndex = posOrder.indexOf(cell); placeholder = `サブテーマ${subIndex+1}`;
+    wrap.classList.add('sub');
+  }else if(posOrder.includes(block) && cell === 4){
+    role = 'subcenter'; subIndex = posOrder.indexOf(block); placeholder = `サブテーマ${subIndex+1}`;
+    wrap.classList.add('subcenter');
+  }else{
+    role = 'action';
+    subIndex = posOrder.includes(block) ? posOrder.indexOf(block) : null;
+    actionIndex = posOrder.includes(cell) ? posOrder.indexOf(cell) : null;
+    placeholder = '具体的アクション';
+    wrap.classList.add('action');
+  }
+
+  if(role === 'sub' || role === 'subcenter'){
+    const b = document.createElement('span');
+    b.className = 'badge'; b.textContent = subIndex + 1;
+    wrap.appendChild(b);
+  }
+
+  const mark = document.createElement('span');
+  mark.className = 'markbtn';
+  mark.textContent = '☆';
+  mark.title = 'アイディアとしてマーク（Todo変換対象になります）';
+  mark.addEventListener('click', (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    const marked = wrap.classList.toggle('marked');
+    mark.textContent = marked ? '★' : '☆';
+  });
+  wrap.appendChild(mark);
+
+  const text = document.createElement('div');
+  text.className = 'celltext';
+  text.contentEditable = 'true';
+  text.dataset.role = role;
+  if(subIndex !== null) text.dataset.subIndex = subIndex;
+  if(actionIndex !== null) text.dataset.actionIndex = actionIndex;
+  text.dataset.placeholder = placeholder;
+  wrap.appendChild(text);
+
+  return wrap;
+}
+
+for(let b=0;b<9;b++){
+  const blockEl = document.createElement('div');
+  blockEl.className = 'block' + (b===4 ? ' center' : '');
+  blockEl.dataset.block = b;
+  for(let c=0;c<9;c++){
+    blockEl.appendChild(makeCell(b,c));
+  }
+  gridEl.appendChild(blockEl);
+}
+
+// サブテーマ連動 & タイトル反映
+gridEl.addEventListener('input', (e)=>{
+  const role = e.target.dataset.role;
+  if(!role) return;
+  if(role === 'sub' || role === 'subcenter'){
+    const idx = e.target.dataset.subIndex;
+    const t = e.target.textContent;
+    document.querySelectorAll(`[data-role="sub"][data-sub-index="${idx}"], [data-role="subcenter"][data-sub-index="${idx}"]`)
+      .forEach(el=>{ if(el !== e.target && el.textContent !== t) el.textContent = t; });
+  }
+  if(role === 'main'){
+    document.getElementById('tbTitle').textContent = e.target.textContent.trim() || '—';
+  }
+});
+
+document.getElementById('tbDate').textContent = new Date().toLocaleDateString('ja-JP');
+
+// サンプルデータ
+const sample = {
+  main: 'エンジニアとしての次のステージ',
+  subs: ['技術力の深化','設計品質の向上','試作サイクルの高速化','情報発信','顧客基盤の拡大','資金と設備','健康管理','人脈と協業'],
+  actions: [
+    ['CAD習熟度を上げる','電子回路の基礎固め','新素材の調査','公差設計の勉強','過去設計の棚卸し','失敗事例の記録','技術書を月1冊','外部講座を受講'],
+    ['検査工程の標準化','図面レビュー体制','材料ロットの管理','治具の見直し','梱包・輸送品質','クレーム分析','品質チェックリスト','外注先の評価'],
+    ['3Dプリンタ活用','簡易試作の型化','評価項目の定型化','試作ログの一元化','週次の検証枠を確保','失敗を許容する運用','部品の共通化','検証データの可視化'],
+    ['制作過程の記録','SNSでの発信','Zine出展','技術ブログ執筆','動画での紹介','展示会参加','コミュニティ運営','事例集の作成'],
+    ['既存顧客への提案','リピート施策','紹介インセンティブ','価格体系の見直し','ニッチ市場の開拓','法人窓口の開拓','販売チャネル拡充','アフターサポート強化'],
+    ['設備投資計画','資金繰り表の整備','補助金の調査','原価管理の徹底','在庫の適正化','外注費の見直し','固定費の圧縮','売上予測の精度向上'],
+    ['睡眠時間の確保','定期的な運動','食事管理','定期健診','作業姿勢の改善','休息日の設定','ストレス管理','無理のない工程計画'],
+    ['異業種との交流','大学・研究機関との連携','協力工場との関係構築','デザイナーとの協業','過去顧客との再接続','業界団体への参加','メンターを持つ','若手との交流']
+  ]
+};
+
+function fillSample(){
+  document.querySelector('[data-role="main"]').textContent = sample.main;
+  document.getElementById('tbTitle').textContent = sample.main;
+  sample.subs.forEach((t,i)=>{
+    document.querySelectorAll(`[data-sub-index="${i}"][data-role="sub"], [data-sub-index="${i}"][data-role="subcenter"]`)
+      .forEach(el=>el.textContent = t);
+  });
+  sample.actions.forEach((arr,i)=>{
+    arr.forEach((t,j)=>{
+      const el = document.querySelector(`[data-role="action"][data-sub-index="${i}"][data-action-index="${j}"]`);
+      if(el) el.textContent = t;
+    });
+  });
+}
+
+function clearGrid(){
+  if(!confirm('グリッドの入力内容を消去します。よろしいですか？')) return;
+  document.querySelectorAll('.celltext, .stamp').forEach(el=>el.textContent = '');
+  document.getElementById('tbTitle').textContent = '—';
+  document.querySelectorAll('.cell.marked').forEach(c=>{
+    c.classList.remove('marked');
+    const m = c.querySelector('.markbtn'); if(m) m.textContent = '☆';
+  });
+}
+
+document.getElementById('btnSample').addEventListener('click', fillSample);
+document.getElementById('btnClear').addEventListener('click', clearGrid);
+
+// PNG出力（グリッド＋タイトルブロックのみ）
+document.getElementById('btnPng').addEventListener('click', async ()=>{
+  const target = document.getElementById('capture');
+  try{
+    const canvas = await html2canvas(target, {backgroundColor:'#EDF1F3', scale:2});
+    canvas.toBlob(blob=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'mandalart.png'; a.click();
+      URL.revokeObjectURL(url);
+    });
+  }catch(err){
+    alert('PNG出力に失敗しました: ' + err.message);
+  }
+});
+
+// ==== アイディア・スロット（強制結合） ====
+function pickRandomPair(){
+  const els = Array.from(document.querySelectorAll('.celltext[data-role="sub"], .celltext[data-role="action"]'));
+  const texts = els.map(el=>el.textContent.trim()).filter(t=>t!=='');
+  if(texts.length < 2) return null;
+  const i = Math.floor(Math.random()*texts.length);
+  let j;
+  do{ j = Math.floor(Math.random()*texts.length); }while(j===i);
+  return [texts[i], texts[j]];
+}
+
+document.querySelectorAll('.slot').forEach(slotEl=>{
+  const btn = slotEl.querySelector('.shuffle-btn');
+  const combo = slotEl.querySelector('.combo');
+  btn.addEventListener('click', ()=>{
+    const pair = pickRandomPair();
+    if(!pair){ alert('シャッフルには最低2マス分の入力が必要です。'); return; }
+    combo.textContent = `${pair[0]} × ${pair[1]} で何かできないか？`;
+  });
+});
+
+// ==== アクション・コンバーター（Todo変換） ====
+const todoGroupsEl = document.getElementById('todoGroups');
+
+function addTodoItem(group, text){
+  const ul = group.querySelector('.todo-items');
+  const li = document.createElement('li');
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.className = 'idone';
+  cb.addEventListener('change', ()=> li.classList.toggle('done', cb.checked));
+
+  const itext = document.createElement('div');
+  itext.className = 'itext'; itext.contentEditable = 'true';
+  itext.dataset.placeholder = 'タスク内容';
+  itext.textContent = text;
+
+  const del = document.createElement('span');
+  del.className = 'idel'; del.textContent = '×'; del.title = '削除';
+  del.addEventListener('click', ()=>li.remove());
+
+  li.appendChild(cb); li.appendChild(itext); li.appendChild(del);
+  ul.appendChild(li);
+}
+
+function convertMarkedTo(group){
+  const marked = document.querySelectorAll('.cell.marked');
+  if(marked.length === 0){
+    alert('マーク（☆）されたマスがありません。グリッド右上の☆をクリックしてマークしてください。');
+    return;
+  }
+  marked.forEach(cellEl=>{
+    const ct = cellEl.querySelector('.celltext');
+    const t = ct ? ct.textContent.trim() : '';
+    if(t) addTodoItem(group, t);
+    cellEl.classList.remove('marked');
+    const m = cellEl.querySelector('.markbtn'); if(m) m.textContent = '☆';
+  });
+}
+
+function createTodoGroup(themeText){
+  const group = document.createElement('div');
+  group.className = 'todo-group';
+
+  const head = document.createElement('div');
+  head.className = 'todo-group-head';
+
+  const theme = document.createElement('div');
+  theme.className = 'theme'; theme.contentEditable = 'true';
+  theme.dataset.placeholder = 'テーマToDoを入力';
+  theme.textContent = themeText || '';
+
+  const actions = document.createElement('div');
+  actions.className = 'todo-actions';
+
+  const convertBtn = document.createElement('button');
+  convertBtn.type='button'; convertBtn.className='btn-mini accent';
+  convertBtn.textContent='マーク済みを変換';
+  convertBtn.addEventListener('click', ()=>convertMarkedTo(group));
+
+  const addItemBtn = document.createElement('button');
+  addItemBtn.type='button'; addItemBtn.className='btn-mini';
+  addItemBtn.textContent='＋ 項目';
+  addItemBtn.addEventListener('click', ()=>addTodoItem(group, ''));
+
+  const delGroupBtn = document.createElement('button');
+  delGroupBtn.type='button'; delGroupBtn.className='btn-mini warn';
+  delGroupBtn.textContent='テーマ削除';
+  delGroupBtn.addEventListener('click', ()=>{
+    if(confirm('このテーマとToDoを削除しますか？')) group.remove();
+  });
+
+  actions.appendChild(convertBtn); actions.appendChild(addItemBtn); actions.appendChild(delGroupBtn);
+  head.appendChild(theme); head.appendChild(actions);
+
+  const ul = document.createElement('ul');
+  ul.className = 'todo-items';
+
+  group.appendChild(head); group.appendChild(ul);
+  todoGroupsEl.appendChild(group);
+  return group;
+}
+
+document.getElementById('btnAddTheme').addEventListener('click', ()=>createTodoGroup(''));
+createTodoGroup('Todoリスト1');
+
+// ==== テキスト出力（マンダラ＋アイディアスロット＋Todo） ====
+document.getElementById('btnTxt').addEventListener('click', ()=>{
+  const mainText = document.querySelector('[data-role="main"]').textContent.trim() || '(未入力)';
+  let out = `# マンダラチャート\n\n`;
+  out += `## メインテーマ\n${mainText}\n\n`;
+  out += `## サブテーマとアクション項目\n`;
+  for(let i=0;i<8;i++){
+    const subEl = document.querySelector(`[data-role="sub"][data-sub-index="${i}"]`);
+    const subText = subEl.textContent.trim() || `(サブテーマ${i+1} 未入力)`;
+    out += `\n### ${i+1}. ${subText}\n`;
+    for(let j=0;j<8;j++){
+      const aEl = document.querySelector(`[data-role="action"][data-sub-index="${i}"][data-action-index="${j}"]`);
+      const aText = aEl.textContent.trim();
+      out += `- ${aText || '(未入力)'}\n`;
+    }
+  }
+
+  out += `\n## アイディア・スロット（強制結合）\n`;
+  document.querySelectorAll('.slot').forEach((slotEl, i)=>{
+    const combo = slotEl.querySelector('.combo').textContent.trim();
+    const idea = slotEl.querySelector('.idea').textContent.trim();
+    out += `\n### スロット${i+1}\n`;
+    out += `組み合わせ: ${combo || '(未生成)'}\n`;
+    out += `アイディア: ${idea || '(未入力)'}\n`;
+  });
+
+  out += `\n## Todoリスト\n`;
+  document.querySelectorAll('.todo-group').forEach(group=>{
+    const theme = group.querySelector('.theme').textContent.trim() || '(無題テーマ)';
+    out += `\n### ${theme}\n`;
+    const items = group.querySelectorAll('.todo-items li');
+    if(items.length === 0){
+      out += '- (項目なし)\n';
+    }else{
+      items.forEach(li=>{
+        const done = li.querySelector('.idone').checked;
+        const text = li.querySelector('.itext').textContent.trim() || '(未入力)';
+        out += `- [${done ? 'x' : ' '}] ${text}\n`;
+      });
+    }
+  });
+
+  const blob = new Blob([out], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'mandalart.txt'; a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
