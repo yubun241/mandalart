@@ -122,6 +122,35 @@
   }
   .cell.marked .markbtn{color:#C98A00;}
 
+  .cell .statusdot{
+    position:absolute;bottom:2px;right:3px;
+    width:11px;height:11px;border-radius:2px;
+    border:1px solid var(--ink-soft);cursor:pointer;
+    background:var(--line-thin);
+  }
+  .cell.cs-notstarted{box-shadow:inset 0 0 0 3px var(--line-thin);}
+  .cell.cs-notstarted .statusdot{background:var(--line-thin);}
+  .cell.cs-inprogress{box-shadow:inset 0 0 0 3px var(--blue);}
+  .cell.cs-inprogress .statusdot{background:var(--blue);}
+  .cell.cs-established{box-shadow:inset 0 0 0 3px #2E7D46;}
+  .cell.cs-established .statusdot{background:#2E7D46;}
+  .cell.cs-difficult{box-shadow:inset 0 0 0 3px #B23A2E;}
+  .cell.cs-difficult .statusdot{background:#B23A2E;}
+  .cell.cs-unknown{box-shadow:inset 0 0 0 3px #C98A00;}
+  .cell.cs-unknown .statusdot{background:#C98A00;}
+
+  .legend{
+    display:flex;gap:14px;flex-wrap:wrap;align-items:center;
+    margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);
+  }
+  .legend-item{display:flex;align-items:center;gap:5px;}
+  .legend-swatch{width:12px;height:12px;border-radius:2px;border:1px solid var(--ink-soft);display:inline-block;}
+  .legend-swatch.ls-notstarted{background:var(--line-thin);}
+  .legend-swatch.ls-inprogress{background:var(--blue);}
+  .legend-swatch.ls-established{background:#2E7D46;}
+  .legend-swatch.ls-difficult{background:#B23A2E;}
+  .legend-swatch.ls-unknown{background:#C98A00;}
+
   .titleblock{
     margin-top:10px;border:2px solid var(--ink);
     display:grid;grid-template-columns:2fr 1fr 1fr 1fr;
@@ -223,8 +252,16 @@
     </div>
   </div>
 
+  <div class="legend" id="statusLegend">
+    <div class="legend-item"><span class="legend-swatch ls-established"></span>確立済み</div>
+    <div class="legend-item"><span class="legend-swatch ls-inprogress"></span>実施中</div>
+    <div class="legend-item"><span class="legend-swatch ls-notstarted"></span>未着手</div>
+    <div class="legend-item"><span class="legend-swatch ls-difficult"></span>困難・要検討</div>
+    <div class="legend-item"><span class="legend-swatch ls-unknown"></span>わからない</div>
+  </div>
+
   <div class="note">
-    中央ブロック中心＝最終目標／中央ブロック周囲8マス＝サブテーマ／各サブテーマは対応するブロックの中心セルに複製表示（連動編集）／その周囲8マスに具体的アクションを記入。マス右上の☆をクリックするとアイディアとしてマークでき、Todoコンバーターで一括変換できます。データはブラウザメモリ上のみで保持（リロードで消去）。
+    中央ブロック中心＝最終目標／中央ブロック周囲8マス＝サブテーマ／各サブテーマは対応するブロックの中心セルに複製表示（連動編集）／その周囲8マスに具体的アクションを記入。マス右上の☆をクリックするとアイディアとしてマークでき、Todoコンバーターで一括変換できます。マス右下の□をクリックすると進捗ステータス（確立済み／実施中／未着手／困難・要検討／わからない）を切替でき、マス全体の枠色で一目で状況が分かります（凡例は上記参照）。データはブラウザメモリ上のみで保持（リロードで消去）。
   </div>
 
   <div class="panel">
@@ -298,6 +335,20 @@ function makeCell(block, cell){
     b.className = 'badge'; b.textContent = subIndex + 1;
     wrap.appendChild(b);
   }
+
+  wrap.dataset.role = role;
+  if(subIndex !== null) wrap.dataset.subIndex = subIndex;
+  wrap.dataset.status = 'notstarted';
+  wrap.classList.add('cs-notstarted');
+
+  const statusDot = document.createElement('span');
+  statusDot.className = 'statusdot';
+  statusDot.title = 'ステータス: 未着手（クリックで切替）';
+  statusDot.addEventListener('click', (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    cycleCellStatus(wrap);
+  });
+  wrap.appendChild(statusDot);
 
   const mark = document.createElement('span');
   mark.className = 'markbtn';
@@ -388,6 +439,7 @@ function clearGrid(){
     c.classList.remove('marked');
     const m = c.querySelector('.markbtn'); if(m) m.textContent = '☆';
   });
+  document.querySelectorAll('.cell[data-status]').forEach(c=>applyStatusToCell(c, 'notstarted'));
 }
 
 document.getElementById('btnSample').addEventListener('click', fillSample);
@@ -450,6 +502,27 @@ const LEGACY_LABEL_TO_KEY = {
   'やれない': 'difficult',
   'わからない': 'unknown'
 };
+
+function applyStatusToCell(cellEl, status){
+  STATUS_ORDER.forEach(s => cellEl.classList.remove('cs-' + s));
+  cellEl.classList.add('cs-' + status);
+  cellEl.dataset.status = status;
+  const dot = cellEl.querySelector(':scope > .statusdot');
+  if(dot) dot.title = 'ステータス: ' + STATUS_LABELS[status] + '（クリックで切替）';
+}
+
+function cycleCellStatus(cellEl){
+  const cur = cellEl.dataset.status || 'notstarted';
+  const idx = STATUS_ORDER.indexOf(cur);
+  const next = STATUS_ORDER[(idx + 1) % STATUS_ORDER.length];
+  applyStatusToCell(cellEl, next);
+  const role = cellEl.dataset.role;
+  const subIndex = cellEl.dataset.subIndex;
+  if((role === 'sub' || role === 'subcenter') && subIndex !== undefined){
+    document.querySelectorAll(`.cell[data-role="sub"][data-sub-index="${subIndex}"], .cell[data-role="subcenter"][data-sub-index="${subIndex}"]`)
+      .forEach(el=>{ if(el !== cellEl) applyStatusToCell(el, next); });
+  }
+}
 
 function addTodoItem(group, text, status){
   const ul = group.querySelector('.todo-items');
@@ -554,12 +627,22 @@ function parseMandalartText(text){
   const data = {
     main: '',
     subs: Array(8).fill(''),
+    subStatus: Array(8).fill('notstarted'),
     actions: Array.from({length:8}, ()=>Array(8).fill('')),
+    actionStatus: Array.from({length:8}, ()=>Array(8).fill('notstarted')),
     slots: [{combo:'',idea:''},{combo:'',idea:''},{combo:'',idea:''}],
     todoGroups: []
   };
 
   const isEmpty = (s)=> s === '' || s === '(未入力)' || s === '(未生成)' || /^\(サブテーマ\d+\s*未入力\)$/.test(s) || s === '(無題テーマ)' || s === '(項目なし)';
+
+  const resolveStatus = (tag)=>{
+    if(!tag) return 'notstarted';
+    const t = tag.trim();
+    if(STATUS_LABEL_TO_KEY[t]) return STATUS_LABEL_TO_KEY[t];
+    if(LEGACY_LABEL_TO_KEY[t]) return LEGACY_LABEL_TO_KEY[t];
+    return 'notstarted';
+  };
 
   lines.forEach(raw=>{
     const line = raw.trim();
@@ -578,13 +661,14 @@ function parseMandalartText(text){
     if(line.startsWith('### ')){
       const h = line.slice(4).trim();
       if(section === 'subs'){
-        const m = h.match(/^(\d+)\.\s*(.*)$/);
+        const m = h.match(/^(\d+)\.\s*(.*?)(?:\s*\[([^\]]+)\])?$/);
         if(m){
           currentSubIndex = parseInt(m[1],10) - 1;
           currentActionIndex = 0;
-          const val = m[2].trim();
-          if(currentSubIndex >= 0 && currentSubIndex < 8 && !isEmpty(val)){
-            data.subs[currentSubIndex] = val;
+          const val = (m[2]||'').trim();
+          if(currentSubIndex >= 0 && currentSubIndex < 8){
+            if(!isEmpty(val)) data.subs[currentSubIndex] = val;
+            data.subStatus[currentSubIndex] = resolveStatus(m[3]);
           }
         }
       }else if(section === 'slots'){
@@ -600,9 +684,12 @@ function parseMandalartText(text){
       if(!isEmpty(line)) data.main = line;
     }else if(section === 'subs'){
       if(line.startsWith('- ') && currentSubIndex >= 0){
-        const val = line.slice(2).trim();
-        if(!isEmpty(val) && currentActionIndex < 8){
-          data.actions[currentSubIndex][currentActionIndex] = val;
+        const m = line.slice(2).match(/^(.*?)(?:\s*\[([^\]]+)\])?$/);
+        const val = m ? (m[1]||'').trim() : line.slice(2).trim();
+        const tag = m ? m[2] : null;
+        if(currentActionIndex < 8){
+          if(!isEmpty(val)) data.actions[currentSubIndex][currentActionIndex] = val;
+          data.actionStatus[currentSubIndex][currentActionIndex] = resolveStatus(tag);
         }
         currentActionIndex++;
       }
@@ -641,10 +728,18 @@ function applyMandalartData(data){
   document.getElementById('tbTitle').textContent = data.main || '—';
   for(let i=0;i<8;i++){
     document.querySelectorAll(`[data-sub-index="${i}"][data-role="sub"], [data-sub-index="${i}"][data-role="subcenter"]`)
-      .forEach(el=>el.textContent = data.subs[i]);
+      .forEach(el=>{
+        el.textContent = data.subs[i];
+        const cellEl = el.closest('.cell');
+        if(cellEl) applyStatusToCell(cellEl, (data.subStatus && data.subStatus[i]) || 'notstarted');
+      });
     for(let j=0;j<8;j++){
       const el = document.querySelector(`[data-role="action"][data-sub-index="${i}"][data-action-index="${j}"]`);
-      if(el) el.textContent = data.actions[i][j];
+      if(el){
+        el.textContent = data.actions[i][j];
+        const cellEl = el.closest('.cell');
+        if(cellEl) applyStatusToCell(cellEl, (data.actionStatus && data.actionStatus[i][j]) || 'notstarted');
+      }
     }
   }
   // マークはリセット
@@ -706,12 +801,19 @@ document.getElementById('btnTxt').addEventListener('click', ()=>{
   out += `## サブテーマとアクション項目\n`;
   for(let i=0;i<8;i++){
     const subEl = document.querySelector(`[data-role="sub"][data-sub-index="${i}"]`);
-    const subText = subEl.textContent.trim() || `(サブテーマ${i+1} 未入力)`;
-    out += `\n### ${i+1}. ${subText}\n`;
+    const subCell = subEl.closest('.cell');
+    const subStatus = subCell ? (subCell.dataset.status || 'notstarted') : 'notstarted';
+    const subTextRaw = subEl.textContent.trim();
+    const subText = subTextRaw || `(サブテーマ${i+1} 未入力)`;
+    const subTag = subTextRaw ? ` [${STATUS_LABELS[subStatus] || STATUS_LABELS.notstarted}]` : '';
+    out += `\n### ${i+1}. ${subText}${subTag}\n`;
     for(let j=0;j<8;j++){
       const aEl = document.querySelector(`[data-role="action"][data-sub-index="${i}"][data-action-index="${j}"]`);
-      const aText = aEl.textContent.trim();
-      out += `- ${aText || '(未入力)'}\n`;
+      const aCell = aEl.closest('.cell');
+      const aStatus = aCell ? (aCell.dataset.status || 'notstarted') : 'notstarted';
+      const aTextRaw = aEl.textContent.trim();
+      const aTag = aTextRaw ? ` [${STATUS_LABELS[aStatus] || STATUS_LABELS.notstarted}]` : '';
+      out += `- ${aTextRaw || '(未入力)'}${aTag}\n`;
     }
   }
 
