@@ -193,6 +193,8 @@
     </div>
    </div>
     <div class="toolbar">
+      <button id="btnImport" class="accent">データ読込</button>
+      <input type="file" id="fileImportInput" accept=".txt,.md,text/plain,text/markdown" style="display:none">
       <button id="btnSample" class="accent">サンプル読込</button>
       <button id="btnClear" class="warn">グリッドをクリア</button>
       <button id="btnPng">PNG出力</button>
@@ -420,12 +422,13 @@ document.querySelectorAll('.slot').forEach(slotEl=>{
 // ==== アクション・コンバーター（Todo変換） ====
 const todoGroupsEl = document.getElementById('todoGroups');
 
-function addTodoItem(group, text){
+function addTodoItem(group, text, done){
   const ul = group.querySelector('.todo-items');
   const li = document.createElement('li');
 
   const cb = document.createElement('input');
   cb.type = 'checkbox'; cb.className = 'idone';
+  if(done){ cb.checked = true; li.classList.add('done'); }
   cb.addEventListener('change', ()=> li.classList.toggle('done', cb.checked));
 
   const itext = document.createElement('div');
@@ -501,6 +504,158 @@ function createTodoGroup(themeText){
 
 document.getElementById('btnAddTheme').addEventListener('click', ()=>createTodoGroup(''));
 createTodoGroup('Todoリスト1');
+
+// ==== データ読込（テキスト出力フォーマットの取り込み） ====
+function parseMandalartText(text){
+  const lines = text.split(/\r?\n/);
+  let section = null;
+  let currentSubIndex = -1;
+  let currentActionIndex = 0;
+  let currentSlotIndex = -1;
+
+  const data = {
+    main: '',
+    subs: Array(8).fill(''),
+    actions: Array.from({length:8}, ()=>Array(8).fill('')),
+    slots: [{combo:'',idea:''},{combo:'',idea:''},{combo:'',idea:''}],
+    todoGroups: []
+  };
+
+  const isEmpty = (s)=> s === '' || s === '(未入力)' || s === '(未生成)' || /^\(サブテーマ\d+\s*未入力\)$/.test(s) || s === '(無題テーマ)' || s === '(項目なし)';
+
+  lines.forEach(raw=>{
+    const line = raw.trim();
+    if(line === '' || line === '# マンダラチャート') return;
+
+    if(line.startsWith('## ')){
+      const h = line.slice(3).trim();
+      if(h.includes('メインテーマ')) section = 'main';
+      else if(h.includes('サブテーマ')) section = 'subs';
+      else if(h.includes('アイディア')) section = 'slots';
+      else if(h.includes('Todo')) section = 'todo';
+      else section = null;
+      return;
+    }
+
+    if(line.startsWith('### ')){
+      const h = line.slice(4).trim();
+      if(section === 'subs'){
+        const m = h.match(/^(\d+)\.\s*(.*)$/);
+        if(m){
+          currentSubIndex = parseInt(m[1],10) - 1;
+          currentActionIndex = 0;
+          const val = m[2].trim();
+          if(currentSubIndex >= 0 && currentSubIndex < 8 && !isEmpty(val)){
+            data.subs[currentSubIndex] = val;
+          }
+        }
+      }else if(section === 'slots'){
+        const m = h.match(/^スロット\s*(\d+)$/);
+        currentSlotIndex = m ? (parseInt(m[1],10) - 1) : -1;
+      }else if(section === 'todo'){
+        data.todoGroups.push({ theme: isEmpty(h) ? '' : h, items: [] });
+      }
+      return;
+    }
+
+    if(section === 'main'){
+      if(!isEmpty(line)) data.main = line;
+    }else if(section === 'subs'){
+      if(line.startsWith('- ') && currentSubIndex >= 0){
+        const val = line.slice(2).trim();
+        if(!isEmpty(val) && currentActionIndex < 8){
+          data.actions[currentSubIndex][currentActionIndex] = val;
+        }
+        currentActionIndex++;
+      }
+    }else if(section === 'slots'){
+      if(currentSlotIndex >= 0 && currentSlotIndex < 3){
+        if(line.startsWith('組み合わせ:')){
+          const val = line.slice('組み合わせ:'.length).trim();
+          if(!isEmpty(val)) data.slots[currentSlotIndex].combo = val;
+        }else if(line.startsWith('アイディア:')){
+          const val = line.slice('アイディア:'.length).trim();
+          if(!isEmpty(val)) data.slots[currentSlotIndex].idea = val;
+        }
+      }
+    }else if(section === 'todo'){
+      const m = line.match(/^- \[([ xX])\]\s*(.*)$/);
+      if(m && data.todoGroups.length > 0){
+        const text = m[2].trim();
+        if(!isEmpty(text)){
+          data.todoGroups[data.todoGroups.length - 1].items.push({
+            text, done: m[1].toLowerCase() === 'x'
+          });
+        }
+      }
+    }
+  });
+
+  return data;
+}
+
+function applyMandalartData(data){
+  // メイン・サブテーマ・アクション
+  document.querySelector('[data-role="main"]').textContent = data.main;
+  document.getElementById('tbTitle').textContent = data.main || '—';
+  for(let i=0;i<8;i++){
+    document.querySelectorAll(`[data-sub-index="${i}"][data-role="sub"], [data-sub-index="${i}"][data-role="subcenter"]`)
+      .forEach(el=>el.textContent = data.subs[i]);
+    for(let j=0;j<8;j++){
+      const el = document.querySelector(`[data-role="action"][data-sub-index="${i}"][data-action-index="${j}"]`);
+      if(el) el.textContent = data.actions[i][j];
+    }
+  }
+  // マークはリセット
+  document.querySelectorAll('.cell.marked').forEach(c=>{
+    c.classList.remove('marked');
+    const m = c.querySelector('.markbtn'); if(m) m.textContent = '☆';
+  });
+
+  // アイディア・スロット
+  document.querySelectorAll('.slot').forEach((slotEl, i)=>{
+    const s = data.slots[i] || {combo:'',idea:''};
+    slotEl.querySelector('.combo').textContent = s.combo;
+    slotEl.querySelector('.idea').textContent = s.idea;
+  });
+
+  // Todoリスト（既存グループは全て置き換え）
+  todoGroupsEl.innerHTML = '';
+  if(data.todoGroups.length === 0){
+    createTodoGroup('Todoリスト1');
+  }else{
+    data.todoGroups.forEach(g=>{
+      const group = createTodoGroup(g.theme);
+      g.items.forEach(it=>addTodoItem(group, it.text, it.done));
+    });
+  }
+}
+
+document.getElementById('btnImport').addEventListener('click', ()=>{
+  document.getElementById('fileImportInput').click();
+});
+
+document.getElementById('fileImportInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  if(!confirm('現在の入力内容を上書きして読み込みます。よろしいですか？')){
+    e.target.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    try{
+      const data = parseMandalartText(ev.target.result);
+      applyMandalartData(data);
+      alert('読み込みが完了しました。');
+    }catch(err){
+      alert('読み込みに失敗しました: ' + err.message);
+    }
+  };
+  reader.onerror = ()=> alert('ファイルの読み込みに失敗しました。');
+  reader.readAsText(file, 'utf-8');
+  e.target.value = '';
+});
 
 // ==== テキスト出力（マンダラ＋アイディアスロット＋Todo） ====
 document.getElementById('btnTxt').addEventListener('click', ()=>{
